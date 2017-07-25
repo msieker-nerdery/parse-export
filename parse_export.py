@@ -65,10 +65,14 @@ def get_parse_data(connection, app_id, rest_api_key, api_endpoint, master_key=No
         params_dict['where'] = filter_json
 
     params = urllib.urlencode(params_dict)
-    connection.request('GET', '/%s/%s?%s' % (api_version, api_endpoint, params), '', header_dict)
-
+    connection.request('GET', '/%s/%s?%s' % ('parse', api_endpoint, params), '', header_dict)
+    raw_response = connection.getresponse().read()
     try:
-        response = json.loads(connection.getresponse().read())
+        response = json.loads(raw_response)
+    except ValueError as e:
+        response = None        
+        print raw_response
+        raise e
     except Exception, e:
         response = None
         print traceback.format_exc()
@@ -78,11 +82,13 @@ def get_parse_data(connection, app_id, rest_api_key, api_endpoint, master_key=No
 
 # parse command-line args
 parser = argparse.ArgumentParser()
+parser.add_argument('-s', '--parse-server', dest='parse_server', required=True, help='Parse server to export from')
+parser.add_argument('-p', '--parse-port', dest='parse_port', required=True, help='port for the Parse server')
 parser.add_argument('-f', '--archive-file', dest='archive_file_path', required=True, help='output archive file path (tar.bz2)')
 parser.add_argument('-o', '--export-objects', dest='parse_export_list', required=True, help='comma-separated list of parse objects to export')
-parser.add_argument('--parse-app-id', dest='parse_app_id', help='parse app id (or export PARSE_APPLICATION_ID)')
+parser.add_argument('--parse-app-id', required=True, dest='parse_app_id', help='parse app id')
 parser.add_argument('--parse-api-key', dest='parse_api_key', help='parse api key (or export PARSE_REST_API_KEY)')
-parser.add_argument('--parse-master-key', dest='parse_master_key', help='parse master key (or export PARSE_MASTER_KEY)')
+parser.add_argument('--parse-master-key', required=True, dest='parse_master_key', help='parse master key')
 args = parser.parse_args()
 
 
@@ -107,15 +113,15 @@ class ParseExportException(Exception):
 def main(temp_directory=TEMP_DIRECTORY, archive_file_path=args.archive_file_path):
     print '---- beginning parse object dump: %s ----' % datetime.strftime(datetime.now(pytz.utc), '%Y-%m-%d %H:%M:%S %z')
 
-    PARSE_APPLICATION_ID = get_env_setting('PARSE_APPLICATION_ID') or args.parse_app_id
-    PARSE_REST_API_KEY = get_env_setting('PARSE_REST_API_KEY') or args.parse_api_key
-    PARSE_MASTER_KEY = get_env_setting('PARSE_MASTER_KEY') or args.parse_master_key
+    PARSE_APPLICATION_ID = args.parse_app_id
+    PARSE_REST_API_KEY = ''
+    PARSE_MASTER_KEY = args.parse_master_key
     INTERNAL_PARSE_CLASSES = {'User': 'users', 'Role': 'roles', 'File': 'files', 'Events': 'events', 'Installation': 'installations'}
 
     parse_export_list = args.parse_export_list.split(",")
 
     for classname in parse_export_list:
-        connection = httplib.HTTPSConnection('api.parse.com', 443)
+        connection = httplib.HTTPSConnection(args.parse_server, int(args.parse_port))
 
         get_parse_data_startime = time.time()
         parse_request_count = 0
